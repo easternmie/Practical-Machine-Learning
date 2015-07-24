@@ -1,0 +1,149 @@
+---
+title: "Predictions of Quality in Human Activity Recognition"
+subtitle: "c"
+author: "mjfii"
+date: "July 21, 2015"
+output: html_document
+---
+
+
+#Executive Summary
+the...
+
+
+# Intitialization
+
+```{r, echo=FALSE}
+setwd('C:/Users/mickf/OneDrive/Source Code/GitHub/Practical-Machine-Learning')
+```
+```{r}
+suppressMessages(library(caret))
+suppressMessages(library(Hmisc))
+suppressMessages(library(AppliedPredictiveModeling))
+
+source('download data set.R')
+source('submit files.R')
+```
+
+# Getting and Cleaning Data
+
+Using the above noted sources, we need to load the data into a data frame and replace any errant data points with NA values.  Additionally, it appears the first seven, maybe even eight, attributes are for informational purposes only; in turn, we will strip those attributes from the both the training and test sets.
+
+```{r}
+training.set <- read.csv('source data/training set.csv',na.strings=c('NA','DIV/0!',''))[,7:160]
+testing.set <- read.csv('source data/testing set.csv',na.strings=c('NA','DIV/0!',''))[,7:160]
+```
+
+split the training set for working purposes
+
+```{r}
+set.seed(3335)
+inTrain = createDataPartition(training.set$classe,p=0.60,list = FALSE)
+```
+
+we see we have the sets broken down now
+
+```{r}
+probe.set = training.set [-inTrain, ]
+dim(probe.set)
+training.set = training.set [inTrain, ]
+dim(training.set)
+```
+
+instead of trying to impute data, lets simple remove variables that are incomplete
+
+```{r}
+complete.vector <- apply(!is.na(training.set),2,sum) >= nrow(training.set)
+training.set <- training.set[,complete.vector]
+probe.set <- probe.set[,complete.vector]
+testing.set <- testing.set[,complete.vector]
+```
+
+# Exploratory Analysis
+
+```{r}
+str(training.set, list.len=20)
+```
+
+
+
+# Principle Component Analysis
+
+Calculate the number of principal components needed to capture 80% of the variance. How many are there?
+
+```{r}
+pc <- preProcess(training.set[,-54],method='pca',thres=0.90)
+```
+
+note the rotation found in the appendix
+
+```{r, eval=FALSE}
+pc$rotation
+```
+
+apply principle components to all sets
+
+```{r}
+training.pc <- predict(pc,training.set[,-54])
+probe.pc <- predict(pc,probe.set[,-54])
+testing.pc <- predict(pc,testing.set[,-54])
+```
+
+# Modeling
+
+```{r, echo=FALSE}
+
+### note this section is hidden in order to speed up the knitr process....
+
+# make sure the sources data folder exists
+if (!file.exists('fittings')) {
+  dir.create('fittings')
+}
+
+# check to see if the training set is there
+if (!file.exists('fittings/solution fit.rds')) {
+  
+tc <- trainControl(method = 'cv', number = 2)
+fit <- train(training.set$classe ~ ., method='rf', data=training.pc, allowParallel=TRUE, prox=TRUE, tcControl=tc)
+
+saveRDS(fit, 'fittings/solution fit.rds')
+  
+} else {
+  
+fit <- readRDS('fittings/solution fit.rds')
+    
+}
+```
+
+
+```{r, eval=FALSE}
+tc <- trainControl(method = 'cv', number = 2)
+fit <- train(training.set$classe ~ ., method='rf', data=training.pc, allowParallel=TRUE, prox=TRUE, tcControl=tc)
+```
+
+
+
+# Prediction and Accuracy
+```{r, eval=FALSE}
+prediction <- predict(fit, newdata=probe.pc)
+```
+
+xxx
+
+```{r, eval=FALSE}
+confusionMatrix(prediction,probe.set$classe)
+```
+
+# Conclusion and Submission
+submission <- predict(fit, newdata=testing.pc)
+submission
+
+# References
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+[Read more here...](http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf)
+
+# Appendix
+```{r, eval=FALSE}
+#pc$rotation
+```
