@@ -1,4 +1,6 @@
 
+download.data <- function(){
+
 # make sure the sources data folder exists
 if (!file.exists('source data')) {
   dir.create('source data')
@@ -23,5 +25,7 @@ if (!file.exists(downloaded.names[2])) {
   
   # download the csv
   download.file(files.to.download[2],downloaded.names[2])
+
+}
 
 }

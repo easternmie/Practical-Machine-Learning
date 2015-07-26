@@ -1,47 +1,62 @@
 ---
-title: "Predictions of Quality in Human Activity Recognition"
-subtitle: "c"
+title: "Human Activity Recognition Predictions of Quality Movements"
+subtitle: "An analysis of covariates regarding proper and improper weight lifting activities"
 author: "mjfii"
 date: "July 21, 2015"
 output: html_document
 ---
 
+***
 
-#Executive Summary
-the...
+# Executive Summary
 
+Human activity recognition (HAR) has gained popularity over the years with the introduction of wearable devices, such as a Jawbone, producing large amounts of machine made data.  It is very common for prediction algorithms to attempt to decipher what type of activity is being conducted, e.g. standing, walking, running, etc.  However, in this analysis, we looked at a single activity carried out in 5 different ways, 1 correct way, and 4 incorrect ways.  In order to do so, we utilized a study and underlying data set on this topic, which can be found here: (http://groupware.les.inf.puc-rio.br/har).  The process for collecting the data, can be summed up with the below quote.
 
-# Intitialization
+*"Six young health participants were asked to perform one set of 10 repetitions of the unilateral dumbbell biceps curl in five different __fashions__: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E)."* <sup> [1]</sup>
+
+These 'fashions' are the subject of the prediction algorithm; more simply put, based on the movements from the utilized accelerometers used in the study, in what way were the participants executing the bicep curls.
+
+The final model uses principle component analysis (PCA) and a random forest algorithm to predict each outcome.  Furthermore, it has a very high out-of-sample accuracy of 96.2%.
+
+***
+
+# Initialization
+
+In order to conduct this machine learning methodology, we need to load the `caret`, `rattle`, and the `randomForest` packages - note they have been previously installed with all their dependencies.  Additionally, there are 2 external R scripts that we will utilize to work with physical files. More information on these can be found in the Appendix.
 
 ```{r, echo=FALSE}
 setwd('C:/Users/mickf/OneDrive/Source Code/GitHub/Practical-Machine-Learning')
 ```
 ```{r}
 suppressMessages(library(caret))
-suppressMessages(library(Hmisc))
-suppressMessages(library(AppliedPredictiveModeling))
+suppressMessages(library(rattle))
+suppressMessages(library(randomForest))
 
 source('download data set.R')
 source('submit files.R')
 ```
 
+# Source Data
+
+The source data used in this publication can be found here: [training](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv) and [testing](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)
+
 # Getting and Cleaning Data
 
-Using the above noted sources, we need to load the data into a data frame and replace any errant data points with NA values.  Additionally, it appears the first seven, maybe even eight, attributes are for informational purposes only; in turn, we will strip those attributes from the both the training and test sets.
+Using the above noted sources, we need to load the data into a data frame and replace any errant data points with NA values, in particular, empty strings and divide by zero errors.  Additionally, it appears the first seven, maybe even eight, attributes are for informational purposes only; in turn, we will strip those attributes from the both the training and test sets.
 
 ```{r}
 training.set <- read.csv('source data/training set.csv',na.strings=c('NA','DIV/0!',''))[,7:160]
 testing.set <- read.csv('source data/testing set.csv',na.strings=c('NA','DIV/0!',''))[,7:160]
 ```
 
-split the training set for working purposes
+In order to conduct cross validation in future stages, we need to break down the training set further in to two working sets, a functional training set and a set in which we will test our model fitting - we will call it the probe set.  75% will be in the former, and 25% will be in the latter.
 
 ```{r}
-set.seed(3335)
-inTrain = createDataPartition(training.set$classe,p=0.60,list = FALSE)
+set.seed(19801104)
+inTrain = createDataPartition(training.set$classe,p=0.75,list = FALSE)
 ```
 
-we see we have the sets broken down now
+Once we set the partition and apply it to each set, you can see the dimensional breakdown of the observations and variables below.
 
 ```{r}
 probe.set = training.set [-inTrain, ]
@@ -50,7 +65,7 @@ training.set = training.set [inTrain, ]
 dim(training.set)
 ```
 
-instead of trying to impute data, lets simple remove variables that are incomplete
+After a cursory review of the training set, many attributes are missing values.  Since this is does not work well with prediction models, we have the option of trying to impute the data, or simply removing the variables in their entirety. Since there are over 150 variables in the set, we will start by removing them.  When we do this we are left with just 53 variables to work with during the modeling process.
 
 ```{r}
 complete.vector <- apply(!is.na(training.set),2,sum) >= nrow(training.set)
@@ -59,29 +74,69 @@ probe.set <- probe.set[,complete.vector]
 testing.set <- testing.set[,complete.vector]
 ```
 
+Two other cleaning exercises that we conducted were removing variables with little to no variance across the set, using the `nearZeroVar()` function, and pairing down the variables that shared a very high (95%+) correlation.  It is important to note, that neither of these methods changed the training set in any significant way.
+
 # Exploratory Analysis
+
+We can take a quick look at the data using the common `str` function.  We can see there are integer and double precision numbers in the set.  There is also three-dimensional data representations, i.e. x, y, and z axis data, with both positive and negative values.
 
 ```{r}
 str(training.set, list.len=20)
 ```
 
+```{r, echo=FALSE}
 
+### note this section is hidden in order to speed up the knitr process....
+
+# make sure the sources data folder exists
+if (!file.exists('fittings')) {
+  dir.create('fittings')
+}
+
+# check to see if the training set is there
+if (!file.exists('fittings/exploratory fit.rds')) {
+  
+ex.fit <- train(classe ~ .,method='rpart',data=training.set)
+
+saveRDS(ex.fit, 'fittings/exploratory fit.rds')
+  
+} else {
+  
+ex.fit <- readRDS('fittings/exploratory fit.rds')
+    
+}
+```
+
+To take a quick look at the importance of certain variables, we can fit a model using the `rpart` method and we see the roll_belt attribute seems to play a large part in classifying the movement.  Other variables and their thresholds can be seen in the breakdown below.
+
+```{r, eval=FALSE}
+ex.fit <- train(classe ~ .,method='rpart',data=training.set)
+```
+```{r}
+ex.fit$finalModel
+```
+
+Since model breaks down the features to only 5 from 53 and not decision path can reach the D activity type, we will not use this initially for the prediction, but we can see the visual paths of the decision tree in the following visual.
+
+```{r}
+fancyRpartPlot(ex.fit$finalModel, main='', sub='')
+```
 
 # Principle Component Analysis
 
-Calculate the number of principal components needed to capture 80% of the variance. How many are there?
+In order to trim down the variables to more manageable number for a prediction algorithm, we will conduct a Principle Component Analysis to isolate components, or usable features, which will capture 80% of the variance of the training set.
 
 ```{r}
-pc <- preProcess(training.set[,-54],method='pca',thres=0.90)
+pc <- preProcess(training.set[,-54],method='pca',thres=0.80)
 ```
 
-note the rotation found in the appendix
+The below `rotation` code is not evaluated at this point in the publication, but it can be viewed in the Appendix.  Regardless, the Principle Component Analysis that was executed trimmed the relevant features down to 13 from 53.
 
 ```{r, eval=FALSE}
 pc$rotation
 ```
 
-apply principle components to all sets
+At this point we are content with 13 solid variables to use for predicting the `$classe` HAR weight lifting movement.  Since we we conducted the PCA on the training set, we now need to apply the same methods to the probe and testing sets, as seen below.
 
 ```{r}
 training.pc <- predict(pc,training.set[,-54])
@@ -115,35 +170,69 @@ fit <- readRDS('fittings/solution fit.rds')
 }
 ```
 
+We can now train the model using our PCA variables using a Random Forest algorithm.  We will utilize the the `trainControl` function in the `caret` package to set the cross validation methodology to use 3 k-folds across the training set.  Then we set the `fit` object to train the `classe` variable based on all predictors.
 
 ```{r, eval=FALSE}
-tc <- trainControl(method = 'cv', number = 2)
+tc <- trainControl(method = 'cv', number = 3)
 fit <- train(training.set$classe ~ ., method='rf', data=training.pc, allowParallel=TRUE, prox=TRUE, tcControl=tc)
 ```
 
-
+This process took a bit of time, 15 plus minutes to build the fitting.  It was processed on a 64 bit machine with 16 GB of RAM and utilizing R version 3.2.1 (2015-06-18).
 
 # Prediction and Accuracy
-```{r, eval=FALSE}
+
+Finally, we get to predict based on our fitting.  We can use the `predict` function with the probe set as an argument to conduct this process.
+
+```{r}
 prediction <- predict(fit, newdata=probe.pc)
 ```
 
-xxx
+Now, we can compare the actual `classe` values of the probe set to those that we predicted.  As seen below the model is very effective with an accuracy of 96% and a Kappa of 0.95. The algorithm seemed to have the most difficulty try to decipher between lowering the barbell half way (D), versus lifting the barbell halfway (C).  Irrespective, the out of sample error rate is approximately 4%.  A confusion matrix is printed below with a complete breakdown of the prediction.
 
-```{r, eval=FALSE}
+```{r}
 confusionMatrix(prediction,probe.set$classe)
 ```
 
 # Conclusion and Submission
+
+Since the model has been defined with such a high degree of accuracy, we can compare it to the testing set.  When we do so, the accuracy remains sufficient as we predicted each of the 20 testing observations correctly.
+
+```{r}
 submission <- predict(fit, newdata=testing.pc)
 submission
+write.files(submission)
+```
 
 # References
-Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+[1] Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
 
 [Read more here...](http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf)
 
+***
+
 # Appendix
-```{r, eval=FALSE}
-#pc$rotation
+
+The `write.files` function used for the submission is below.
+
+```{r}
+write.files
+```
+
+The `download.data` function gets all the working files and places them in the appropriate files for future use.
+
+```{r}
+download.data
+```
+
+The prediction `rotation` can be found below with respect to the PCA.
+
+```{r}
+pc$rotation
+```
+
+The summary of the tidy training set is view with the `summary` function.
+
+```{r}
+summary(training.set)
 ```

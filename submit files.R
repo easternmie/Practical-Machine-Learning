@@ -1,9 +1,9 @@
-# make sure the sources data folder exists
-if (!file.exists('submission')) {
-  dir.create('submission')
-}
-
 write.files <- function(x){
+
+  if (!file.exists('submission')) {
+    dir.create('submission')
+  }
+  
   n = length(x)
   for(i in 1:n){
     filename = paste0('submission/problem_id_',i,'.txt')
